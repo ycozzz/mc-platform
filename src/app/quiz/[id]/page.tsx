@@ -16,7 +16,6 @@ export default function QuizPage() {
   const [allIds, setAllIds] = useState<number[]>([]);
   const [selected, setSelected] = useState('');
   const [result, setResult] = useState<Result | null>(null);
-  const [showIframe, setShowIframe] = useState(false);
 
   useEffect(() => {
     fetch('/api/questions').then(r => r.json()).then((qs: Question[]) => {
@@ -35,8 +34,19 @@ export default function QuizPage() {
     const data = await res.json();
     setResult(data);
     
-    // Auto-open Google AI search after 800ms
-    setTimeout(() => setShowIframe(true), 800);
+    // Auto-open Google AI search in new window after 800ms
+    if (q) {
+      setTimeout(() => {
+        const options = [
+          ['A', q.option_a], ['B', q.option_b],
+          ['C', q.option_c], ['D', q.option_d],
+        ].filter(([, v]) => v && v !== '-');
+        
+        const googleQuery = `${q.question} ${options.map(([k, v]) => `${k}. ${v}`).join(' ')}`;
+        const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&udm=50`;
+        window.open(googleSearchUrl, '_blank', 'noopener,noreferrer');
+      }, 800);
+    }
   };
 
   const nextQuestion = () => {
@@ -44,8 +54,19 @@ export default function QuizPage() {
     const nextId = allIds[curIdx + 1] || allIds[0];
     setSelected('');
     setResult(null);
-    setShowIframe(false);
     router.push(`/quiz/${nextId}`);
+  };
+
+  const openGoogleSearch = () => {
+    if (!q) return;
+    const options = [
+      ['A', q.option_a], ['B', q.option_b],
+      ['C', q.option_c], ['D', q.option_d],
+    ].filter(([, v]) => v && v !== '-');
+    
+    const googleQuery = `${q.question} ${options.map(([k, v]) => `${k}. ${v}`).join(' ')}`;
+    const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&udm=50`;
+    window.open(googleSearchUrl, '_blank', 'noopener,noreferrer');
   };
 
   const curIdx = allIds.indexOf(Number(id));
@@ -64,12 +85,6 @@ export default function QuizPage() {
     ['A', q.option_a], ['B', q.option_b],
     ['C', q.option_c], ['D', q.option_d],
   ].filter(([, v]) => v && v !== '-');
-
-  // Build Google AI search query with question + all options
-  const googleQuery = `${q.question} ${options.map(([k, v]) => `${k}. ${v}`).join(' ')}`;
-  const googleSearchUrl = result 
-    ? `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&udm=50`
-    : '';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 py-8 px-4">
@@ -186,13 +201,21 @@ export default function QuizPage() {
                   </div>
                 )}
 
+                {/* Google AI Button */}
                 <button 
-                  onClick={() => setShowIframe(!showIframe)}
+                  onClick={openGoogleSearch}
                   className="mt-4 w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-medium py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-2"
                 >
                   <span className="text-lg">🔍</span>
-                  <span>{showIframe ? 'Hide' : 'Show'} Google AI Explanation</span>
+                  <span>Open Google AI Search (New Tab)</span>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
                 </button>
+
+                <p className="text-xs text-center text-gray-500 mt-2">
+                  💡 Google AI will open automatically in a new tab
+                </p>
               </div>
 
               {/* Navigation Buttons */}
@@ -213,42 +236,11 @@ export default function QuizPage() {
             </div>
           )}
         </div>
-
-        {/* Google Search Iframe */}
-        {showIframe && result && (
-          <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-slideDown">
-            <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-white">
-                <span className="text-xl">🔍</span>
-                <div>
-                  <span className="font-semibold block">Google AI Search Results</span>
-                  <span className="text-xs text-white/80">Question + All Options</span>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowIframe(false)}
-                className="text-white/80 hover:text-white text-xl font-bold transition"
-              >
-                ✕
-              </button>
-            </div>
-            <iframe
-              src={googleSearchUrl}
-              className="w-full h-[700px] border-0"
-              sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-              title="Google Search Results"
-            />
-          </div>
-        )}
       </div>
 
       <style jsx global>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-20px); }
           to { opacity: 1; transform: translateY(0); }
         }
         @keyframes shake {
@@ -257,7 +249,6 @@ export default function QuizPage() {
           75% { transform: translateX(5px); }
         }
         .animate-fadeIn { animation: fadeIn 0.5s ease-out; }
-        .animate-slideDown { animation: slideDown 0.4s ease-out; }
         .animate-shake { animation: shake 0.5s ease-in-out; }
       `}</style>
     </div>
