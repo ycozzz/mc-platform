@@ -16,12 +16,19 @@ export default function QuizPage() {
   const [allIds, setAllIds] = useState<number[]>([]);
   const [selected, setSelected] = useState('');
   const [result, setResult] = useState<Result | null>(null);
+  const [answeredQuestions, setAnsweredQuestions] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     fetch('/api/questions').then(r => r.json()).then((qs: Question[]) => {
       setQ(qs.find(x => x.id === Number(id)) || null);
       setAllIds(qs.map(x => x.id));
     });
+    
+    // Load answered questions from localStorage
+    const answered = localStorage.getItem('answeredQuestions');
+    if (answered) {
+      setAnsweredQuestions(new Set(JSON.parse(answered)));
+    }
   }, [id]);
 
   const submit = async () => {
@@ -34,52 +41,39 @@ export default function QuizPage() {
     const data = await res.json();
     setResult(data);
     
-    // Auto-open Google AI search in new window after 800ms
-    if (q) {
-      setTimeout(() => {
-        const options = [
-          ['A', q.option_a], ['B', q.option_b],
-          ['C', q.option_c], ['D', q.option_d],
-        ].filter(([, v]) => v && v !== '-');
-        
-        const googleQuery = `${q.question} ${options.map(([k, v]) => `${k}. ${v}`).join(' ')}`;
-        const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&udm=50`;
-        window.open(googleSearchUrl, '_blank', 'noopener,noreferrer');
-      }, 800);
-    }
+    // Mark as answered
+    const newAnswered = new Set(answeredQuestions);
+    newAnswered.add(Number(id));
+    setAnsweredQuestions(newAnswered);
+    localStorage.setItem('answeredQuestions', JSON.stringify([...newAnswered]));
+  };
+
+  const openGoogleAI = () => {
+    if (!q || !result) return;
+    const options = [
+      ['A', q.option_a], ['B', q.option_b],
+      ['C', q.option_c], ['D', q.option_d],
+    ].filter(([, v]) => v && v !== '-');
+    const query = `${q.question} ${options.map(([k, v]) => `${k}. ${v}`).join(' ')}`;
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&udm=50`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const goToQuestion = (qId: number) => {
+    setSelected('');
+    setResult(null);
+    router.push(`/quiz/${qId}`);
   };
 
   const nextQuestion = () => {
     const curIdx = allIds.indexOf(Number(id));
     const nextId = allIds[curIdx + 1] || allIds[0];
-    setSelected('');
-    setResult(null);
-    router.push(`/quiz/${nextId}`);
-  };
-
-  const openGoogleSearch = () => {
-    if (!q) return;
-    const options = [
-      ['A', q.option_a], ['B', q.option_b],
-      ['C', q.option_c], ['D', q.option_d],
-    ].filter(([, v]) => v && v !== '-');
-    
-    const googleQuery = `${q.question} ${options.map(([k, v]) => `${k}. ${v}`).join(' ')}`;
-    const googleSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&udm=50`;
-    window.open(googleSearchUrl, '_blank', 'noopener,noreferrer');
+    goToQuestion(nextId);
   };
 
   const curIdx = allIds.indexOf(Number(id));
-  const progress = allIds.length > 0 ? ((curIdx + 1) / allIds.length) * 100 : 0;
 
-  if (!q) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="animate-pulse flex flex-col items-center gap-3">
-        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-gray-400 text-sm">Loading question...</p>
-      </div>
-    </div>
-  );
+  if (!q) return <div className="flex justify-center py-20"><p className="text-gray-400">Loading...</p></div>;
 
   const options = [
     ['A', q.option_a], ['B', q.option_b],
@@ -87,170 +81,137 @@ export default function QuizPage() {
   ].filter(([, v]) => v && v !== '-');
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Progress Bar */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <a href="/" className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 transition">
-              <span>←</span> Back to Topics
-            </a>
-            <span className="text-sm font-semibold text-gray-700">
-              Question {curIdx + 1} <span className="text-gray-400">/ {allIds.length}</span>
-            </span>
-          </div>
-          <div className="h-2 bg-white rounded-full overflow-hidden shadow-inner">
-            <div 
-              className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-500 ease-out"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Left Sidebar - Question Navigator */}
+      <div className="w-64 bg-white border-r border-gray-200 p-4 overflow-y-auto">
+        <div className="mb-4">
+          <a href="/" className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+            <span>←</span> Back to Topics
+          </a>
+        </div>
+        
+        <div className="mb-3">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Questions</h3>
+          <p className="text-xs text-gray-400">
+            {answeredQuestions.size} / {allIds.length} answered
+          </p>
         </div>
 
-        {/* Question Card */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden mb-6">
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-6">
-            <h2 className="text-xl font-bold text-white leading-relaxed">{q.question}</h2>
-          </div>
-
-          <div className="p-8 space-y-3">
-            {options.map(([key, val]) => {
-              const isCorrect = result && key === result.correct_answer;
-              const isWrong = result && key === selected && !result.is_correct;
-              const isSelected = !result && selected === key;
-              
-              return (
-                <button 
-                  key={key} 
-                  onClick={() => !result && setSelected(key)}
-                  disabled={!!result}
-                  className={`group w-full text-left p-5 rounded-xl border-2 transition-all duration-300 transform hover:scale-[1.02] disabled:hover:scale-100
-                    ${isCorrect 
-                      ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 shadow-lg shadow-green-100' 
-                      : isWrong
-                        ? 'bg-gradient-to-r from-red-50 to-rose-50 border-red-400 shadow-lg shadow-red-100'
-                        : isSelected
-                          ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-500 shadow-lg shadow-blue-100'
-                          : result
-                            ? 'border-gray-200 bg-gray-50 opacity-60'
-                            : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 hover:shadow-md'
-                    }`}
-                >
-                  <div className="flex items-start gap-4">
-                    <span className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm transition-all
-                      ${isCorrect
-                        ? 'bg-green-500 text-white'
-                        : isWrong
-                          ? 'bg-red-500 text-white'
-                          : isSelected
-                            ? 'bg-blue-500 text-white'
-                            : result
-                              ? 'bg-gray-300 text-gray-500'
-                              : 'bg-gray-100 text-gray-700 group-hover:bg-blue-500 group-hover:text-white'
-                      }`}>
-                      {key}
-                    </span>
-                    <span className={`flex-1 text-sm leading-relaxed ${result && !isCorrect && !isWrong ? 'text-gray-400' : 'text-gray-800'}`}>
-                      {val}
-                    </span>
-                    {isCorrect && <span className="text-green-600 text-xl">✓</span>}
-                    {isWrong && <span className="text-red-600 text-xl">✗</span>}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Submit Button */}
-          {!result && (
-            <div className="px-8 pb-8">
-              <button 
-                onClick={submit} 
-                disabled={!selected}
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed transform hover:scale-[1.02] disabled:hover:scale-100"
+        <div className="space-y-2">
+          {allIds.map((qId, idx) => {
+            const isCurrent = qId === Number(id);
+            const isAnswered = answeredQuestions.has(qId);
+            
+            return (
+              <button
+                key={qId}
+                onClick={() => goToQuestion(qId)}
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all
+                  ${isCurrent 
+                    ? 'bg-blue-600 text-white font-semibold shadow-md' 
+                    : isAnswered
+                      ? 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100'
+                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
+                  }`}
               >
-                Submit Answer
-              </button>
-            </div>
-          )}
-
-          {/* Result Section */}
-          {result && (
-            <div className="px-8 pb-8 space-y-4 animate-fadeIn">
-              <div className={`p-6 rounded-xl border-2 ${result.is_correct ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-300' : 'bg-gradient-to-br from-red-50 to-rose-50 border-red-300'}`}>
-                <div className="flex items-center gap-3 mb-4">
-                  <span className={`text-3xl ${result.is_correct ? 'animate-bounce' : 'animate-shake'}`}>
-                    {result.is_correct ? '🎉' : '💡'}
-                  </span>
-                  <div>
-                    <p className={`font-bold text-lg ${result.is_correct ? 'text-green-700' : 'text-red-700'}`}>
-                      {result.is_correct ? 'Correct!' : 'Not quite right'}
-                    </p>
-                    {!result.is_correct && (
-                      <p className="text-sm text-gray-600 mt-1">
-                        The correct answer is <span className="font-bold text-green-600">{result.correct_answer}</span>
-                      </p>
-                    )}
-                  </div>
+                <div className="flex items-center justify-between">
+                  <span>Q{idx + 1}</span>
+                  {isAnswered && !isCurrent && (
+                    <span className="text-xs">✓</span>
+                  )}
+                  {isCurrent && (
+                    <span className="text-xs">→</span>
+                  )}
                 </div>
-
-                {result.explanation && (
-                  <div className="bg-white/60 backdrop-blur-sm p-4 rounded-lg border border-gray-200">
-                    <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Explanation</p>
-                    <p className="text-sm text-gray-700 leading-relaxed">{result.explanation}</p>
-                  </div>
-                )}
-
-                {/* Google AI Button */}
-                <button 
-                  onClick={openGoogleSearch}
-                  className="mt-4 w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-medium py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-2"
-                >
-                  <span className="text-lg">🔍</span>
-                  <span>Open Google AI Search (New Tab)</span>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                </button>
-
-                <p className="text-xs text-center text-gray-500 mt-2">
-                  💡 Google AI will open automatically in a new tab
-                </p>
-              </div>
-
-              {/* Navigation Buttons */}
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => router.push('/')}
-                  className="flex-1 bg-white hover:bg-gray-50 text-gray-700 font-medium py-3 px-6 rounded-xl border-2 border-gray-200 hover:border-gray-300 transition-all duration-300 shadow-sm hover:shadow-md"
-                >
-                  ← Back to Topics
-                </button>
-                <button 
-                  onClick={nextQuestion}
-                  className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02]"
-                >
-                  Next Question →
-                </button>
-              </div>
-            </div>
-          )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <style jsx global>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-5px); }
-          75% { transform: translateX(5px); }
-        }
-        .animate-fadeIn { animation: fadeIn 0.5s ease-out; }
-        .animate-shake { animation: shake 0.5s ease-in-out; }
-      `}</style>
+      {/* Main Content */}
+      <div className="flex-1 p-6 overflow-y-auto">
+        <div className="max-w-3xl mx-auto">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">
+                Question {curIdx + 1} / {allIds.length}
+              </span>
+              <span className="text-xs text-gray-400">
+                {answeredQuestions.has(Number(id)) ? '✓ Answered' : 'Not answered'}
+              </span>
+            </div>
+            
+            <h2 className="text-lg font-semibold mb-5 leading-relaxed">{q.question}</h2>
+
+            <div className="space-y-2.5">
+              {options.map(([key, val]) => (
+                <button 
+                  key={key} 
+                  onClick={() => !result && setSelected(key)}
+                  className={`w-full text-left p-3.5 rounded-lg border-2 transition-all text-sm
+                    ${result
+                      ? key === result.correct_answer
+                        ? 'bg-green-50 border-green-400 text-green-800'
+                        : key === selected && !result.is_correct
+                          ? 'bg-red-50 border-red-400 text-red-800'
+                          : 'border-gray-100 text-gray-400'
+                      : selected === key
+                        ? 'bg-blue-50 border-blue-400 text-blue-800'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                >
+                  <span className="font-semibold mr-2 inline-block w-5">{key}.</span>{val}
+                </button>
+              ))}
+            </div>
+
+            {!result ? (
+              <button 
+                onClick={submit} 
+                disabled={!selected}
+                className="mt-5 bg-blue-600 hover:bg-blue-700 text-white px-8 py-2.5 rounded-lg disabled:opacity-30 transition font-medium"
+              >
+                Submit Answer
+              </button>
+            ) : (
+              <div className="mt-5 space-y-3">
+                <div className={`p-4 rounded-lg ${result.is_correct ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                  <p className="font-semibold text-sm">
+                    {result.is_correct ? '✅ Correct!' : `❌ Wrong — Correct answer: ${result.correct_answer}`}
+                  </p>
+                  {result.explanation && (
+                    <p className="mt-2 text-xs text-gray-600 leading-relaxed max-h-40 overflow-y-auto">{result.explanation}</p>
+                  )}
+                  
+                  <button
+                    onClick={openGoogleAI}
+                    className="mt-3 w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-medium transition flex items-center justify-center gap-2"
+                  >
+                    <span>🔍</span>
+                    <span>Google AI Search</span>
+                  </button>
+                </div>
+                
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => router.push('/')}
+                    className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm"
+                  >
+                    ← Back
+                  </button>
+                  <button 
+                    onClick={nextQuestion}
+                    className="flex-1 px-6 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium"
+                  >
+                    Next Question →
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
