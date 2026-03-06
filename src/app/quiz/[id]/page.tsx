@@ -32,7 +32,11 @@ export default function QuizPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question_id: Number(id), selected }),
     });
-    setResult(await res.json());
+    const data = await res.json();
+    setResult(data);
+    
+    // Auto-open Google AI search after 800ms
+    setTimeout(() => setShowIframe(true), 800);
   };
 
   const nextQuestion = () => {
@@ -61,8 +65,10 @@ export default function QuizPage() {
     ['C', q.option_c], ['D', q.option_d],
   ].filter(([, v]) => v && v !== '-');
 
+  // Build Google AI search query with question + all options
+  const googleQuery = `${q.question} ${options.map(([k, v]) => `${k}. ${v}`).join(' ')}`;
   const googleSearchUrl = result 
-    ? `https://www.google.com/search?igu=1&q=${encodeURIComponent(q.question + ' 為什麼答案是 ' + result.correct_answer + ' 中文解釋')}`
+    ? `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&udm=50`
     : '';
 
   return (
@@ -214,7 +220,10 @@ export default function QuizPage() {
             <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-2 text-white">
                 <span className="text-xl">🔍</span>
-                <span className="font-semibold">Google AI Search Results</span>
+                <div>
+                  <span className="font-semibold block">Google AI Search Results</span>
+                  <span className="text-xs text-white/80">Question + All Options</span>
+                </div>
               </div>
               <button 
                 onClick={() => setShowIframe(false)}
