@@ -9,6 +9,11 @@ type Question = {
 
 type Result = { is_correct: boolean; correct_answer: string; explanation: string };
 
+type AnswerRecord = {
+  questionId: number;
+  isCorrect: boolean;
+};
+
 export default function QuizPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -16,7 +21,7 @@ export default function QuizPage() {
   const [allIds, setAllIds] = useState<number[]>([]);
   const [selected, setSelected] = useState('');
   const [result, setResult] = useState<Result | null>(null);
-  const [answeredQuestions, setAnsweredQuestions] = useState<Set<number>>(new Set());
+  const [answerRecords, setAnswerRecords] = useState<Map<number, boolean>>(new Map());
 
   useEffect(() => {
     fetch('/api/questions').then(r => r.json()).then((qs: Question[]) => {
@@ -24,10 +29,11 @@ export default function QuizPage() {
       setAllIds(qs.map(x => x.id));
     });
     
-    // Load answered questions from localStorage
-    const answered = localStorage.getItem('answeredQuestions');
-    if (answered) {
-      setAnsweredQuestions(new Set(JSON.parse(answered)));
+    // Load answer records from localStorage
+    const records = localStorage.getItem('answerRecords');
+    if (records) {
+      const parsed = JSON.parse(records);
+      setAnswerRecords(new Map(parsed));
     }
   }, [id]);
 
@@ -41,11 +47,11 @@ export default function QuizPage() {
     const data = await res.json();
     setResult(data);
     
-    // Mark as answered
-    const newAnswered = new Set(answeredQuestions);
-    newAnswered.add(Number(id));
-    setAnsweredQuestions(newAnswered);
-    localStorage.setItem('answeredQuestions', JSON.stringify([...newAnswered]));
+    // Record answer result
+    const newRecords = new Map(answerRecords);
+    newRecords.set(Number(id), data.is_correct);
+    setAnswerRecords(newRecords);
+    localStorage.setItem('answerRecords', JSON.stringify([...newRecords]));
   };
 
   const openGoogleAI = () => {
@@ -80,52 +86,103 @@ export default function QuizPage() {
     ['C', q.option_c], ['D', q.option_d],
   ].filter(([, v]) => v && v !== '-');
 
+  // Calculate stats
+  const answeredCount = answerRecords.size;
+  const correctCount = [...answerRecords.values()].filter(v => v).length;
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      {/* Left Sidebar - Question Navigator */}
-      <div className="w-64 bg-white border-r border-gray-200 p-4 overflow-y-auto">
+      {/* Left Sidebar - Question Grid Navigator */}
+      <div className="w-72 bg-white border-r border-gray-200 p-4 overflow-y-auto">
         <div className="mb-4">
           <a href="/" className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
             <span>←</span> Back to Topics
           </a>
         </div>
         
-        <div className="mb-3">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Questions</h3>
-          <p className="text-xs text-gray-400">
-            {answeredQuestions.size} / {allIds.length} answered
-          </p>
+        {/* Stats */}
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Progress</div>
+          <div className="flex items-center justify-between text-sm">
+            <div>
+              <span className="font-bold text-gray-900">{answeredCount}</span>
+              <span className="text-gray-500"> / {allIds.length}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-green-500 rounded"></div>
+                <span className="text-xs text-gray-600">{correctCount}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-red-500 rounded"></div>
+                <span className="text-xs text-gray-600">{answeredCount - correctCount}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="space-y-2">
+        {/* Question Grid */}
+        <div className="mb-2">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Questions</h3>
+        </div>
+        
+        <div className="grid grid-cols-5 gap-2">
           {allIds.map((qId, idx) => {
             const isCurrent = qId === Number(id);
-            const isAnswered = answeredQuestions.has(qId);
+            const answerResult = answerRecords.get(qId);
+            const isAnswered = answerResult !== undefined;
+            const isCorrect = answerResult === true;
+            const isWrong = answerResult === false;
             
             return (
               <button
                 key={qId}
                 onClick={() => goToQuestion(qId)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all
+                className={`relative w-full aspect-square rounded-lg text-sm font-semibold transition-all transform hover:scale-110
                   ${isCurrent 
-                    ? 'bg-blue-600 text-white font-semibold shadow-md' 
-                    : isAnswered
-                      ? 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100'
-                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
+                    ? 'bg-blue-600 text-white shadow-lg ring-2 ring-blue-300 ring-offset-2' 
+                    : isCorrect
+                      ? 'bg-green-500 text-white shadow-md hover:bg-green-600'
+                      : isWrong
+                        ? 'bg-red-500 text-white shadow-md hover:bg-red-600'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
                   }`}
+                title={`Question ${idx + 1}${isCorrect ? ' - Correct' : isWrong ? ' - Wrong' : ''}`}
               >
-                <div className="flex items-center justify-between">
-                  <span>Q{idx + 1}</span>
-                  {isAnswered && !isCurrent && (
-                    <span className="text-xs">✓</span>
-                  )}
-                  {isCurrent && (
-                    <span className="text-xs">→</span>
-                  )}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  {idx + 1}
                 </div>
+                {isCorrect && (
+                  <div className="absolute top-0.5 right-0.5 text-xs">✓</div>
+                )}
+                {isWrong && (
+                  <div className="absolute top-0.5 right-0.5 text-xs">✗</div>
+                )}
               </button>
             );
           })}
+        </div>
+
+        {/* Legend */}
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="text-xs text-gray-500 space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center text-white text-xs font-bold">1</div>
+              <span>Current</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-green-500 rounded flex items-center justify-center text-white text-xs font-bold">2</div>
+              <span>Correct</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-red-500 rounded flex items-center justify-center text-white text-xs font-bold">3</div>
+              <span>Wrong</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 bg-gray-100 border border-gray-300 rounded flex items-center justify-center text-gray-600 text-xs font-bold">4</div>
+              <span>Not answered</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -137,9 +194,15 @@ export default function QuizPage() {
               <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">
                 Question {curIdx + 1} / {allIds.length}
               </span>
-              <span className="text-xs text-gray-400">
-                {answeredQuestions.has(Number(id)) ? '✓ Answered' : 'Not answered'}
-              </span>
+              {answerRecords.has(Number(id)) && (
+                <span className={`text-xs px-2 py-1 rounded font-medium ${
+                  answerRecords.get(Number(id)) 
+                    ? 'bg-green-100 text-green-700' 
+                    : 'bg-red-100 text-red-700'
+                }`}>
+                  {answerRecords.get(Number(id)) ? '✓ Correct' : '✗ Wrong'}
+                </span>
+              )}
             </div>
             
             <h2 className="text-lg font-semibold mb-5 leading-relaxed">{q.question}</h2>
